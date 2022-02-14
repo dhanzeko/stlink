@@ -315,6 +315,8 @@ int stlink_flashloader_stop(stlink_t *sl, flash_loader_t *fl);
 
 int stlink_target_connect(stlink_t *sl, enum connect_type connect);
 
+int stlink_set_rtc(stlink_t* sl);
+
 #include <sg.h>
 #include <usb.h>
 #include <reg.h>

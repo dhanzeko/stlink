@@ -1407,3 +1407,169 @@ stlink_fread_ihex_finalize(struct stlink_fread_ihex_worker_arg *the_arg) {
 
   return (0 == fclose(the_arg->file));
 }
+
+#define PWR_CR      0x40007000
+#define RTC_TR      0x40002800
+#define RTC_DR      0x40002804
+#define RTC_CR      0x40002808
+#define RTC_PRER    0x40002810
+#define RTC_ISR     0x4000280C
+#define RTC_WPR     0x40002824
+
+int stlink_set_rtc(stlink_t* sl) {
+    DLOG("*** stlink_set_rtc ***\n");
+
+    //int stlink_write_mem32(stlink_t * sl, uint32_t addr, uint16_t len);
+    //int stlink_write_mem8(stlink_t * sl, uint32_t addr, uint16_t len);
+    //int stlink_read_mem32(stlink_t * sl, uint32_t addr, uint16_t len);
+
+    uint32_t temp;
+    uint32_t pwr_cr;
+    uint32_t rtc_isr;
+    int ret;
+
+    DLOG("Configuring RTC\n");
+
+    ret = stlink_read_mem32(sl, PWR_CR, 4);
+    temp = (uint32_t)sl->q_buf[0] + (((uint32_t)sl->q_buf[1]) << 8) +
+           (((uint32_t)sl->q_buf[2]) << 16) + (((uint32_t)sl->q_buf[3]) << 24);
+
+    /* Access to RTC and RTC Backup registers. */
+    DLOG("Enable access to RTC and RTC Backup registers.\n");
+    pwr_cr = *(uint32_t*)sl->q_buf;
+    temp = pwr_cr | 0x100;
+    memcpy(sl->q_buf, &temp, sizeof(temp));
+    ret = stlink_write_mem32(sl, PWR_CR, 4);
+
+    /* Unlock the write protection. */
+    DLOG("Unlock the write protection.\n");
+    sl->q_buf[0] = 0xCA;
+    ret = stlink_write_mem8(sl, RTC_WPR, 1);
+    if (ret != 0) WLOG("write failed (%d)", ret);
+    sl->q_buf[0] = 0x53;
+    ret = stlink_write_mem8(sl, RTC_WPR, 1);
+    if (ret != 0) WLOG("write failed (%d)", ret);
+
+    /* Set RTC to initialization mode */
+    ret = stlink_read_mem32(sl, RTC_ISR, 4);
+    temp = (uint32_t)sl->q_buf[0] + (((uint32_t)sl->q_buf[1]) << 8) +
+        (((uint32_t)sl->q_buf[2]) << 16) + (((uint32_t)sl->q_buf[3]) << 24);
+    DLOG("RTC ISR=0x%08x.\n", temp);
+    rtc_isr = *(uint32_t*)sl->q_buf;
+    DLOG("RTC ISR=0x%08x (cast).\n", rtc_isr);
+    DLOG("Set RTC to initialization mode.\n");
+    //temp = rtc_isr | 0x80;
+    temp = 0xFFFFFFFF;
+    memcpy(sl->q_buf, &temp, sizeof(temp));
+    DLOG("write RTC ISR=0x%08x.\n", temp);
+    ret = stlink_write_mem32(sl, RTC_ISR, 4);
+    if (ret != 0) WLOG("write failed (%d)", ret);
+
+    ret = stlink_read_mem32(sl, RTC_ISR, 4);
+    temp = (uint32_t)sl->q_buf[0] + (((uint32_t)sl->q_buf[1]) << 8) +
+        (((uint32_t)sl->q_buf[2]) << 16) + (((uint32_t)sl->q_buf[3]) << 24);
+    DLOG("read RTC ISR=0x%08x (after write).\n", temp);
+
+    /* And wait until ready */
+    do {
+        ret = stlink_read_mem32(sl, RTC_ISR, 4);
+        temp = *(uint32_t*)sl->q_buf;
+    } while ((temp & 0x40) == 0);
+
+
+    /* Set RTC prescaler to 1Hz clock */
+    /* Not needed - we are using backup domain reset value */
+
+    /* Set RTC control register */
+    /* Not needed - we are using backup domain reset value */
+
+    /* get current UTC time */
+    time_t ltime;
+    time(&ltime);
+    DLOG("Current local time as unix timestamp: %li\n", ltime);
+
+#if 0
+    char tmbuf[64];
+    struct tm* ltm = gmtime(&ltime); /* Convert to UTC */
+    strftime(tmbuf, 26, "%Y-%m-%d %H:%M:%S", ltm);
+    DLOG("Current UTC time (ltm): %s\n", tmbuf);
+    time_t utctime = mktime(ltm); /* Store as unix timestamp */
+    DLOG("Current UTC time as unix timestamp: %li\n", ltime);
+    struct tm* utctm = gmtime(&utctime); /* Convert to UTC */
+    strftime(tmbuf, 26, "%Y-%m-%d %H:%M:%S", utctm);
+    DLOG("Current UTC time (utctm): %s\n", tmbuf);
+
+    uint32_t rtc_tr;
+
+    /* Configure RTC time */
+    rtc_tr = (((uint32_t)(utctm->tm_hour / 10) & (0x03)) << 20) |
+             (((uint32_t)(utctm->tm_hour % 10) & (0x0F)) << 16) |
+             (((uint32_t)(utctm->tm_min / 10) & (0x07)) << 12) |
+             (((uint32_t)(utctm->tm_min % 10) & (0x0F)) << 8) |
+             (((uint32_t)(utctm->tm_sec / 10) & (0x07)) << 4) |
+             (((uint32_t)(utctm->tm_sec % 10) & (0x0F)) << 0);
+    memcpy(sl->q_buf, &rtc_tr, sizeof(rtc_tr));
+    ret = stlink_write_mem32(sl, RTC_TR, 4);
+    DLOG("Write time to rtc: 0x%08x\n", rtc_tr);
+
+    /* Configure RTC date */
+    uint32_t rtc_dr;
+    rtc_dr = (((uint32_t)((utctm->tm_year-100)/ 10) & (0x0F)) << 20) |
+             (((uint32_t)((utctm->tm_year - 100) % 10) & (0x0F)) << 16) |
+             (((uint32_t)(utctm->tm_wday) & (0x07)) << 13) |
+             (((uint32_t)((utctm->tm_mon + 1) / 10) & (0x01)) << 12) |
+             (((uint32_t)((utctm->tm_mon + 1) % 10) & (0x0F)) << 8) |
+             (((uint32_t)(utctm->tm_mday / 10) & (0x03)) << 4) |
+             (((uint32_t)(utctm->tm_mday % 10) & (0x0F)) << 0);
+    memcpy(sl->q_buf, &rtc_dr, sizeof(rtc_dr));
+    ret = stlink_write_mem32(sl, RTC_DR, 4);
+    DLOG("Write date to rtc: 0x%08x\n", rtc_dr);
+#else
+     struct tm* ltm = gmtime(&ltime); /* Convert to UTC */
+    //strftime(tmbuf, 26, "%Y-%m-%d %H:%M:%S", ltm);
+    //DLOG("Current UTC time (ltm): %s\n", tmbuf);
+
+    uint32_t rtc_tr=0;
+
+    /* Configure RTC time */
+    rtc_tr = (((uint32_t)(ltm->tm_hour / 10) & (0x03)) << 20) |
+        (((uint32_t)(ltm->tm_hour % 10) & (0x0F)) << 16) |
+        (((uint32_t)(ltm->tm_min / 10) & (0x07)) << 12) |
+        (((uint32_t)(ltm->tm_min % 10) & (0x0F)) << 8) |
+        (((uint32_t)(ltm->tm_sec / 10) & (0x07)) << 4) |
+        (((uint32_t)(ltm->tm_sec % 10) & (0x0F)) << 0);
+    memcpy(sl->q_buf, &rtc_tr, sizeof(rtc_tr));
+    DLOG("Write time to rtc (%d): 0x%08x\n", ret, rtc_tr);
+    ret = stlink_write_mem32(sl, RTC_TR, 4);
+    if (ret != 0) WLOG("write failed (%d)", ret);
+    ret = stlink_read_mem32(sl, RTC_TR, 4);
+    temp = *(uint32_t*)sl->q_buf;
+    DLOG("RTC TR=0x%08x.\n", temp);
+
+    /* Configure RTC date */
+    uint32_t rtc_dr;
+    //ltm = gmtime(&ltime);
+    rtc_dr = (((uint32_t)((ltm->tm_year - 100) / 10) & (0x0F)) << 20) |
+        (((uint32_t)((ltm->tm_year - 100) % 10) & (0x0F)) << 16) |
+        (((uint32_t)(ltm->tm_wday) & (0x07)) << 13) |
+        (((uint32_t)((ltm->tm_mon + 1) / 10) & (0x01)) << 12) |
+        (((uint32_t)((ltm->tm_mon + 1) % 10) & (0x0F)) << 8) |
+        (((uint32_t)(ltm->tm_mday / 10) & (0x03)) << 4) |
+        (((uint32_t)(ltm->tm_mday % 10) & (0x0F)) << 0);
+    memcpy(sl->q_buf, &rtc_dr, sizeof(rtc_dr));
+    DLOG("Write date to rtc (%d): 0x%08x\n", ret, rtc_dr);
+    ret = stlink_write_mem32(sl, RTC_DR, 4);
+    if (ret != 0) WLOG("write failed (%d)", ret);
+    ret = stlink_read_mem32(sl, RTC_DR, 4);
+    temp = *(uint32_t*)sl->q_buf;
+    DLOG("RTC DR=0x%08x.\n", temp);
+#endif
+
+    /* Start RTC */
+    temp = rtc_isr & (~0x80);
+    memcpy(sl->q_buf, &temp, sizeof(temp));
+    ret = stlink_write_mem32(sl, RTC_ISR, 4);
+    ret = stlink_read_mem32(sl, RTC_ISR, 4);
+
+    return(0);
+}

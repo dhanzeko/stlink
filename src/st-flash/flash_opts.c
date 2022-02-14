@@ -221,6 +221,10 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av) {
             if (o->cmd != FLASH_CMD_NONE) { return(-1); }
 
             o->cmd = CMD_RESET;
+        } else if (strcmp(av[0], "setrtc") == 0) {
+            if (o->cmd != FLASH_CMD_NONE) { return(-1); }
+
+            o->cmd = CMD_SET_RTC;
         } else {
             break;
         }
@@ -255,10 +259,14 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av) {
 
         break;
 
+    case CMD_SET_RTC: // no more arguments expected
+        if (ac != 0) { return(-1); }
+        break;
+
     case FLASH_CMD_READ:     // expect filename, addr and size
         if ((o->area == FLASH_MAIN_MEMORY) || (o->area == FLASH_SYSTEM_MEMORY)) {
             if (ac != 3) { return invalid_args("read <path> <addr> <size>"); }
-            
+
             o->filename = av[0];
             uint32_t address;
             result = get_integer_from_char_array(av[1], &address);
@@ -332,10 +340,10 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av) {
             }
         } else if (o->area == FLASH_OPTCR) { // expect option control register value
             if (ac != 1) { return invalid_args("option control register write <value>"); }
-            
+
             uint32_t val;
             result = get_integer_from_char_array(av[0], &val);
-            
+
             if (result != 0) {
                 return bad_arg ("val");
             } else {
@@ -343,7 +351,7 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av) {
             }
         } else if (o->area == FLASH_OPTCR1) { // expect option control register 1 value
             if (ac != 1) { return invalid_args("option control register 1 write <value>"); }
-            
+
             uint32_t val;
             result = get_integer_from_char_array(av[0], &val);
             if (result != 0) {
@@ -353,7 +361,7 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av) {
             }
         } else if (o->format == FLASH_FORMAT_BINARY) {    // expect filename and addr
             if (ac != 2) { return invalid_args("write <path> <addr>"); }
-            
+
             o->filename = av[0];
             uint32_t addr;
             result = get_integer_from_char_array(av[1], &addr);

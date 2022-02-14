@@ -183,6 +183,11 @@ int main(int ac, char** av) {
             printf("Failed to reset device\n");
             goto on_error;
         }
+    } else if (o.cmd == CMD_SET_RTC) {
+        if (stlink_set_rtc(sl)) {
+            printf("Failed to set device rtc\n");
+            goto on_error;
+        }
     } else {                                                                    // read
         if ((o.area == FLASH_MAIN_MEMORY) || (o.area == FLASH_SYSTEM_MEMORY)) {
             if ((o.size == 0) && (o.addr >= sl->flash_base) && (o.addr < sl->flash_base + sl->flash_size)) {
@@ -256,6 +261,7 @@ int main(int ac, char** av) {
     err = 0; // success
 
 on_error:
+    printf("st-flash status %d\n", err);
     stlink_exit_debug_mode(sl);
     stlink_close(sl);
     free(mem);
