@@ -1479,12 +1479,12 @@ int stlink_set_rtc(stlink_t* sl) {
         ready = (temp & 0x40) != 0;
         DLOG("#%d RTC ISR=0x%08x, ready=%d.\n", cnt, temp, ready);
         cnt++;
-        usleep(10000);
+        usleep(100000);
     } while (!ready && (cnt < 10));
 
     if(!ready)
     {
-        WLOG("Cannot write RTC!");
+        WLOG("Cannot write RTC!\n");
         return (-1);
     }
 
