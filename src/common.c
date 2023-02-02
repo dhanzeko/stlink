@@ -1471,11 +1471,22 @@ int stlink_set_rtc(stlink_t* sl) {
     DLOG("read RTC ISR=0x%08x (after write).\n", temp);
 
     /* And wait until ready */
+    int cnt = 0;
+    bool ready = false;
     do {
         ret = stlink_read_mem32(sl, RTC_ISR, 4);
         temp = *(uint32_t*)sl->q_buf;
-    } while ((temp & 0x40) == 0);
+        ready = (temp & 0x40) != 0;
+        DLOG("#%d RTC ISR=0x%08x, ready=%d.\n", cnt, temp, ready);
+        cnt++;
+        usleep(10000);
+    } while (!ready && (cnt < 10));
 
+    if(!ready)
+    {
+        WLOG("Cannot write RTC!");
+        return (-1);
+    }
 
     /* Set RTC prescaler to 1Hz clock */
     /* Not needed - we are using backup domain reset value */
